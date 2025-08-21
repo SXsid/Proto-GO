@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
+	"net"
 	"strings"
 )
 
@@ -18,13 +18,13 @@ func getLinesChannel(file io.ReadCloser) <-chan string {
 		for {
 			//buffer:holding place
 			data := make([]byte, 8)
-			//populating buffer while reutrn number of valid byte we can extract
+			//populating buffer while reutrn number of valid byte we can extract (error rep EOF)
 			n, err := file.Read(data)
 			if err != nil {
 				break
 			}
 			tempdata := string(data[:n])
-			parts := strings.Split(tempdata, "\n")
+			parts := strings.Split(tempdata, "\r\n")
 			//get all parts sep by spliter
 			for i := 0; i < len(parts)-1; i++ {
 				lines <- str + parts[i]
@@ -44,13 +44,20 @@ func getLinesChannel(file io.ReadCloser) <-chan string {
 }
 
 func main() {
-	file, err := os.Open("message.txt")
+	listerner, err := net.Listen("tcp", ":42069")
 	if err != nil {
-		log.Fatal("Error while reading the file ", err)
-	}
+		log.Fatal("cant make a tcp connection ")
 
-	for line := range getLinesChannel(file) {
-		fmt.Printf("read:%s\n", line)
 	}
-
+	//contanct accepting new connection
+	for {
+		con, err := listerner.Accept()
+		if err != nil {
+			log.Fatal("connection can't be esatblished!!")
+		}
+		for data := range getLinesChannel(con) {
+			fmt.Printf("read:%s\n", data)
+		}
+		con.Close()
+	}
 }
