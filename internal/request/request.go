@@ -7,8 +7,6 @@ import (
 	"unicode"
 )
 
-// the hhtp mehtod consist
-// 1) request line =>  method (get/post/put) rqust target (url/ endpoint) httpversiio (http1.1)
 type Request struct {
 	RequestLine RequestLine
 	ParseStatus parseStatus
@@ -43,14 +41,12 @@ var ERROR_INVALID_STATE = fmt.Errorf("parser state is unknown")
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	req := NewRequest()
-	//reading from stram of data
 
 	buff := make([]byte, maxBufferSize)
 
 	buffIndex := 0
 	for req.ParseStatus != done {
 		n, err := reader.Read(buff[buffIndex:])
-		//what to do in read failure1
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +93,7 @@ func parseRequestLine(reqLine string) (RequestLine, int, error) {
 		return RequestLine{}, 0, nil
 	}
 	startLine := reqLine[:idx]
-	read := idx + len("\r\n") // accoutn for the limiters
+	read := idx + len("\r\n")
 	data := strings.Split(startLine, " ")
 	if len(data) != 3 {
 		return RequestLine{}, 0, ERROR_MALFORMED_START_LINE
