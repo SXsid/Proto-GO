@@ -1,124 +1,122 @@
 package request
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"strings"
-	"unicode"
 )
 
 type Request struct {
 	RequestLine RequestLine
-	ParseStatus parseStatus
+	parseStatus parseStatus
 }
+
 type RequestLine struct {
+	Method string
+
 	HttpVersion   string
 	RequestTarget string
-	Method        string
 }
-type parseStatus int
-
-const (
-	initialized parseStatus = iota
-	done
-)
-const maxBufferSize = 8 << 20
 
 // constructor
 func NewRequest() *Request {
 	return &Request{
-		ParseStatus: initialized,
+		parseStatus: parseInit,
 	}
 }
 
-var Error_BAD_START_LINE = fmt.Errorf("somethign is wrong with start line")
-var Error_EMPTY_REQUEST_LINE = fmt.Errorf("the request url is empty")
-var ERROR_MALFORMED_START_LINE = fmt.Errorf("invalid start line / something is pararms are missing")
-var ERROR_UNSUPPORTED_HTTP_VERSION = fmt.Errorf("inccorect http version")
-var ERROR_UNSUPPORTED_HTTP_METHOD = fmt.Errorf("invalid method")
-var ERROR_PARSING_IN_DONE_STATE = fmt.Errorf("trying to read data in a done state")
-var ERROR_INVALID_STATE = fmt.Errorf("parser state is unknown")
+type parseStatus string
+
+const (
+	parseInit parseStatus = "init"
+	parseDone parseStatus = "done"
+)
+const MaX_BUFF_SIZE = 8 << 20
+
+var DELIMITOR = []byte("\r\n")
+var ERROR_IVALID_STARTLINE = fmt.Errorf("incomplete/error full  start line ")
+var ERROR_INVALID_PARSESTATUS = fmt.Errorf("unkown parse status")
+var ERROR_UNSUPOORTED_HTTPVERSION = fmt.Errorf("unsupported http version ")
+var ERROR_UNSUPOORTED_METHOD = fmt.Errorf("wrong methods")
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	req := NewRequest()
-
-	buff := make([]byte, maxBufferSize)
-
-	buffIndex := 0
-	for req.ParseStatus != done {
-		n, err := reader.Read(buff[buffIndex:])
+	buff := make([]byte, MaX_BUFF_SIZE)
+	bufflength := 0
+	request := NewRequest()
+	for request.parseStatus != parseDone {
+		//read from the stream
+		n, err := reader.Read(buff[bufflength:])
 		if err != nil {
 			return nil, err
 		}
-		buffIndex += n
-		parsedIndex, err := req.parse(buff[:buffIndex])
+		bufflength += n
+		read, err := request.parser(buff[:bufflength])
 		if err != nil {
 			return nil, err
 		}
-		copy(buff, buff[parsedIndex:buffIndex])
-		buffIndex -= parsedIndex
+		copy(buff, buff[read:bufflength])
+		bufflength -= read
 	}
-	return req, nil
+	return request, nil
 }
-
-func (r *Request) parse(data []byte) (int, error) {
+func (r *Request) parser(data []byte) (int, error) {
 	read := 0
 
-loop:
+outer:
 	for {
-		switch r.ParseStatus {
-		case done:
-			break loop
-		case initialized:
-			reqLine, readlineindex, err := parseRequestLine(string(data[read:]))
+		switch r.parseStatus {
+		case parseDone:
+			break outer
+		case parseInit:
+			reqLine, readIndex, err := parseRequesLine(data)
 			if err != nil {
 				return 0, err
 			}
-			if readlineindex == 0 {
-				break loop
+			if readIndex == 0 {
+				break outer
 			}
-			r.RequestLine = reqLine
-			read += readlineindex
-			r.ParseStatus = done
+			r.RequestLine = *reqLine
+			r.parseStatus = parseDone
+			read += readIndex
 		default:
-			break loop
+			return 0, ERROR_INVALID_PARSESTATUS
 		}
 	}
 	return read, nil
 }
-func parseRequestLine(reqLine string) (RequestLine, int, error) {
 
-	idx := strings.Index(reqLine, "\r\n")
+func parseRequesLine(data []byte) (*RequestLine, int, error) {
+
+	idx := bytes.Index(data, DELIMITOR)
 	if idx == -1 {
-		return RequestLine{}, 0, nil
+		//continue reading
+		return nil, 0, nil
 	}
-	startLine := reqLine[:idx]
-	read := idx + len("\r\n")
-	data := strings.Split(startLine, " ")
-	if len(data) != 3 {
-		return RequestLine{}, 0, ERROR_MALFORMED_START_LINE
+	parts := bytes.Split(data[:idx], []byte(" "))
+	if len(parts) != 3 {
+		return nil, 0, ERROR_IVALID_STARTLINE
 	}
-	if !isAllCaptilized(data[0]) {
-		return RequestLine{}, 0, ERROR_UNSUPPORTED_HTTP_METHOD
+	read := idx + len(DELIMITOR)
+	//error
+	if !isAllCapital(parts[0]) {
+		return nil, 0, ERROR_UNSUPOORTED_METHOD
 	}
-	if data[2] != "HTTP/1.1" {
-		return RequestLine{}, 0, ERROR_UNSUPPORTED_HTTP_VERSION
+	if string(parts[2]) != "HTTP/1.1" {
+		return nil, 0, ERROR_UNSUPOORTED_HTTPVERSION
 	}
-
-	return RequestLine{
-		Method:        data[0],
-		RequestTarget: data[1],
-		HttpVersion:   strings.Split(data[2], "/")[1],
+	return &RequestLine{
+		Method:        string(parts[0]),
+		RequestTarget: string(parts[1]),
+		HttpVersion:   strings.Split(string(parts[2]), "/")[1],
 	}, read, nil
 }
-
-func isAllCaptilized(str string) bool {
-	if len(str) == 0 {
+func isAllCapital(method []byte) bool {
+	if len(method) == 0 {
 		return false
 	}
-
-	for _, r := range str {
-		if !unicode.IsLetter(r) || !unicode.IsUpper(r) {
+	for _, char := range method {
+		if char < 'A' || char > 'Z' {
 			return false
 		}
 	}
